@@ -1,0 +1,31 @@
+{
+  "name": "oscp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows secure data erasure and forensic recovery platform",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "tsc --noEmit && npm run build:renderer && npm run build:main && npm run build:preload",
+    "build:renderer": "vite build --config vite.config.ts --mode renderer",
+    "build:main": "vite build --config vite.config.ts --mode main",
+    "build:preload": "vite build --config vite.config.ts --mode preload",
+    "test": "vitest run",
+    "package:win": "electron-builder --win"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "electron": "latest",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "electron-builder": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}
