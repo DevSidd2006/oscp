@@ -1,8 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { OscpApi } from "../shared/types";
+import { createOscpApi } from "../shared/bridge";
 
-const api: OscpApi = {
-  enumerateDevices: () => ipcRenderer.invoke("storage:enumerate")
-};
+/**
+ * The preload bridge is the only path between the renderer and the main
+ * process. It exposes read-only inspection and audit status; destructive
+ * operations are not reachable from the renderer.
+ */
+const api = createOscpApi((channel) => ipcRenderer.invoke(channel));
 
 contextBridge.exposeInMainWorld("oscp", api);

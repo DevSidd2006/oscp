@@ -22,6 +22,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     root: "src/renderer",
+    // The renderer is loaded from disk with the file:// protocol, so assets
+    // have to be referenced relative to the page instead of from the
+    // filesystem root.
+    base: "./",
     build: {
       outDir: "../../dist/renderer",
       emptyOutDir: true

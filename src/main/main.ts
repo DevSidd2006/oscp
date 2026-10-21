@@ -1,13 +1,14 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import path from "node:path";
-import type { StorageDevice } from "../shared/types";
+import { AuditSink } from "./audit-sink";
+import { resolveDataMode } from "./data-mode";
+import { bootstrapStorageService, type ServiceBootstrap } from "./storage-service";
+import { OSCP_BRIDGE_CHANNELS } from "../shared/bridge";
 
-const demoDevices: StorageDevice[] = [
-  { id: "demo-system", model: "Windows System Drive", serialNumber: "DEMO-SYSTEM", capacityBytes: 512_110_190_592, deviceType: "SSD", isSystemDisk: true, accessMode: "ReadOnly" },
-  { id: "demo-usb", model: "Removable USB Storage", serialNumber: "DEMO-USB", capacityBytes: 31_998_951_424, deviceType: "USB", isSystemDisk: false, accessMode: "ReadOnly" }
-];
+let bootstrap: ServiceBootstrap | null = null;
+let quitting = false;
 
-function createWindow() {
+function createWindow(): void {
   const window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -20,14 +21,61 @@ function createWindow() {
       sandbox: true
     }
   });
+
+  // The renderer only ever loads the bundled interface. Any attempt to open a
+  // new window or navigate away is denied.
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+
   window.loadFile(path.join(__dirname, "../renderer/index.html"));
 }
 
-ipcMain.handle("storage:enumerate", async () => demoDevices);
+app.whenReady().then(async () => {
+  app.setAppUserModelId("com.oscp.desktop");
 
-app.whenReady().then(() => {
+  const mode = resolveDataMode(process.env);
+  const audit = new AuditSink({
+    filePath: path.join(app.getPath("userData"), "audit", "oscp-audit.jsonl"),
+  });
+
+  bootstrap = await bootstrapStorageService(mode, audit);
+
+  ipcMain.handle(OSCP_BRIDGE_CHANNELS.enumerateDevices, async () => {
+    return bootstrap!.service.enumerateDevices();
+  });
+
+  ipcMain.handle(OSCP_BRIDGE_CHANNELS.getAuditStatus, async () => {
+    return bootstrap!.service.getAuditStatus();
+  });
+
+  await bootstrap.service.recordAppStart();
+
   createWindow();
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+
+  app.on("activate", () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
 });
 
-app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
+
+app.on("before-quit", (event) => {
+  if (quitting || !bootstrap) {
+    return;
+  }
+  quitting = true;
+  event.preventDefault();
+  void bootstrap.service
+    .recordAppStop()
+    .catch(() => undefined)
+    .finally(() => {
+      bootstrap?.dispose();
+      app.quit();
+    });
+});

@@ -20,6 +20,7 @@ Both targets use the same core storage, forensic, erasure, and audit services wh
 - Support HDDs, SSDs, USB devices, partitions, and Windows volumes.
 - Continue or safely stop long-running operations after errors or interruption.
 - Produce reports suitable for personal records, IT asset disposal, or forensic review.
+- Select sanitization methods from verified media capabilities and never overstate verification results.
 
 ## High-level architecture
 
@@ -65,11 +66,13 @@ The forensic engine supports read-only acquisition, disk imaging, filesystem ana
 
 ### Erasure engine
 
-The erasure engine supports file, partition, and whole-device sanitization. The strategy must depend on the storage type and capability. Every destructive operation requires explicit confirmation, records the selected target, and performs post-operation verification where technically possible.
+The erasure engine supports file, partition, and whole-device sanitization. It follows the NIST SP 800-88 Rev. 2 decision model and selects Clear, Purge, Cryptographic Erase, or Destruction based on verified device capabilities, not labels alone. Every destructive operation requires explicit target confirmation, records the selected method and limitations, and performs the required verification. It must return `Completed`, `Failed`, `Interrupted`, or `VerificationUncertain`; only `Completed` may be presented as successful sanitization.
 
 ### Storage abstraction layer
 
 This layer presents a consistent interface for physical disks, logical volumes, partitions, sector ranges, and filesystem metadata. It separates higher-level recovery and erasure logic from Windows-specific device APIs and makes the engines testable with virtual or simulated storage providers.
+
+For sanitization, it must expose stable device identity, media and bus type, capacity, sector size, system-disk status, encryption state, device-native sanitize capabilities, health/accessibility state, and any known hidden or remapped areas. An unknown value is safer than an inferred value.
 
 ### Audit and reporting
 
@@ -98,6 +101,7 @@ Select task
     -> preview impact
     -> execute read-only or destructive job
     -> hash / verify result
+    -> classify result state and limitations
     -> record audit events
     -> export report
 ```
