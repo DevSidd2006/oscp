@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
           fileName: () => mode === "main" ? "main.js" : "preload.js"
         },
         rollupOptions: {
-          external: ["electron", "node:path"]
+          external: ["electron", /^node:/]
         }
       }
     };

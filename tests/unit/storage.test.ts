@@ -243,6 +243,30 @@ describe("validateStorageDevices", () => {
 });
 
 describe("normalizeHelperDevice", () => {
+  const withPartitions = () => ({ id: "disk:abc", model: "Real disk", capacityBytes: 1000,
+    deviceType: "SSD", isSystemDisk: false, accessMode: "ReadOnly", diskNumber: 1,
+    busType: "SATA", healthStatus: "Healthy", logicalSectorSize: 512, warnings: [],
+    partitions: [{ partitionNumber: 1, offsetBytes: 100, sizeBytes: 900,
+      driveLetters: ["D:"], filesystem: "NTFS", label: "Data", freeBytes: 400 }] });
+
+  it("preserves and validates partition and volume details from C#", () => {
+    const device = normalizeHelperDevice(withPartitions());
+    expect(device.partitions?.[0]).toMatchObject({ partitionNumber: 1, filesystem: "NTFS", freeBytes: 400 });
+    expect(device.diskNumber).toBe(1);
+    expect(device.busType).toBe("SATA");
+  });
+
+  it("rejects out-of-bounds partitions and unsafe volume values", () => {
+    for (const change of [{ sizeBytes: 1001 }, { freeBytes: -1 }, { driveLetters: ["C:\\"] }, { partitionNumber: 0 }]) {
+      const raw = withPartitions();
+      Object.assign(raw.partitions[0], change);
+      expect(() => normalizeHelperDevice(raw)).toThrow();
+    }
+  });
+
+  it("rejects malformed details even on a device with an existing fingerprint", () => {
+    expect(() => normalizeHelperDevice({ ...withPartitions(), fingerprint: "abc", partitions: "invalid" })).toThrow();
+  });
   it("passes through a device that already matches the contract", () => {
     const device = validDevice();
     expect(normalizeHelperDevice(device)).toBe(device);

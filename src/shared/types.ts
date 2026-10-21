@@ -1,3 +1,9 @@
+import type { OscpApi } from "./operations";
+export type { ReportFormat, ReportExportResult } from "./reports";
+export { validateReportFormat, validateReportExportResult } from "./reports";
+export { planRecovery } from "./recovery";
+export type { WorkingCopyPlan, WorkingCopyJob, WorkingCopyPreparation, WorkingCopyState } from "./acquisition";
+export type { RecoveryPlanRequest, RecoverySource, RecoveryDestination, AcquisitionRecord, RecoveryFinding } from "./recovery";
 // Re-exported from dedicated contract modules for backward compatibility.
 // Primary definitions live in:
 //   - src/shared/storage.ts  (DeviceType, AccessMode, StorageDevice)
@@ -6,7 +12,7 @@
 //   - src/shared/operations.ts (OscpApi, StorageCommand, EnumerationResult)
 //   - src/shared/bridge.ts   (the allowed preload bridge surface)
 //   - src/shared/validation.ts (runtime validation of bridge payloads)
-export type { DeviceType, AccessMode, StorageDevice, StorageDeviceInput } from "./storage";
+export type { DeviceType, AccessMode, StorageDevice, StorageDeviceInput, StoragePartition, StorageDetails } from "./storage";
 export {
   computeDeviceFingerprint,
   createStorageDevice,

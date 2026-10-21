@@ -7,12 +7,12 @@ OSCP is a Windows-focused desktop application for safe storage inspection, futur
 The project is designed for both common users and security professionals:
 
 - Common users get guided workflows with plain-language explanations.
-- Advanced users get access to forensic imaging, recovery, hashing, and detailed reports.
+- Advanced workflows are planned for forensic imaging, recovery, and hashing; audit reports are available now.
 - Destructive operations are isolated, clearly labeled, and protected by confirmation safeguards.
 
 ## Current status
 
-The current build is a read-only Electron foundation. It can display a guided storage overview using demo storage data. It does not currently:
+The current build is a read-only Electron foundation. It displays real Windows disks, partitions, and volumes through a read-only C# helper, or explicitly labeled synthetic devices in demo mode. Reports exports the audit log and its integrity findings as JSON or standalone HTML through a native Save dialog. It does not currently:
 
 - Erase files, partitions, or disks
 - Write raw sectors
@@ -21,6 +21,8 @@ The current build is a read-only Electron foundation. It can display a guided st
 - Create Windows PE boot media
 
 This safety boundary is intentional while the Windows helper layer is being developed.
+
+The working-copy panel can copy an existing image file to a new file on a separate physical disk, with SHA-256 verification, progress, cancellation, and companion metadata. It does not acquire a physical disk or recover deleted files. See [development instructions](docs/development.md) for supported paths and verification limits.
 
 ## Architecture
 
@@ -64,7 +66,7 @@ See:
 
 For the Electron UI:
 
-- Node.js 20 or newer
+- Node.js 24 or newer
 - npm 10 or newer
 - Windows 10 or Windows 11 for the target application
 
@@ -74,7 +76,7 @@ For the Windows helper:
 - Windows development environment
 - Administrator privileges may be required for device enumeration and later storage operations
 
-The current Linux development environment can edit and inspect the project, but Windows-specific helper behavior must be built and tested on Windows.
+Portable tests run on Windows or Linux. Real storage enumeration and the helper smoke test require Windows.
 
 ## Getting started
 
@@ -114,7 +116,7 @@ npm run build
 npm test
 ```
 
-The Electron development shell and the Windows helper will be connected as the helper protocol is implemented. Until then, the application uses safe demo storage data.
+Run `npm run build:helper` followed by `npm run start:real` for connected Windows drives, or `npm start` for demo mode. Close the current app before switching modes. See [development instructions](docs/development.md) for rebuilds, permissions, and audit integrity handling.
 
 ## Safety model
 

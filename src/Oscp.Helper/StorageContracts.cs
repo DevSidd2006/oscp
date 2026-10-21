@@ -72,12 +72,13 @@ public static class ErrorCodes
 }
 
 /// <summary>
-/// Commands supported by the helper. This phase only supports read-only
-/// enumeration. Destructive commands are intentionally absent.
+/// Commands supported by the helper: read-only enumeration and existing-path
+/// resolution. Destructive and acquisition commands are intentionally absent.
 /// </summary>
 public static class Commands
 {
     public const string StorageEnumerate = "storage.enumerate";
+    public const string StorageResolvePath = "storage.resolvePath";
 }
 
 /// <summary>
@@ -93,6 +94,12 @@ public sealed class StorageDeviceDto
     public string DeviceType { get; init; } = "Unknown";
     public bool IsSystemDisk { get; init; }
     public string AccessMode { get; init; } = "ReadOnly";
+    public int DiskNumber { get; init; }
+    public string BusType { get; init; } = "Unknown";
+    public string HealthStatus { get; init; } = "Unknown";
+    public long? LogicalSectorSize { get; init; }
+    public List<PartitionDto> Partitions { get; init; } = new();
+    public List<string> Warnings { get; init; } = new();
 }
 
 /// <summary>
@@ -106,6 +113,8 @@ public sealed class PartitionDto
     public string? Filesystem { get; init; }
     public string? VolumeGuid { get; init; }
     public List<string> DriveLetters { get; init; } = new();
+    public string? Label { get; init; }
+    public long? FreeBytes { get; init; }
 }
 
 /// <summary>

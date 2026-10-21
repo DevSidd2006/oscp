@@ -122,8 +122,8 @@ export class PipeTransport implements HelperTransport {
     this.socket = net.createConnection(pipePath);
     this.socket.setEncoding("utf8");
     this.socket.on("data", (chunk: string) => this.onData(chunk));
-    this.socket.on("error", () => this.onClose("transport error"));
-    this.socket.on("close", () => this.onClose("closed"));
+    this.socket.on("error", () => this.handleClose("transport error"));
+    this.socket.on("close", () => this.handleClose("closed"));
   }
 
   connect(): Promise<void> {
@@ -163,16 +163,15 @@ export class PipeTransport implements HelperTransport {
     if (this.closed) {
       return;
     }
-    this.closed = true;
     this.socket.destroy();
-    this.onClose("closed");
+    this.handleClose("closed");
   }
 
   private onData(chunk: string): void {
     this.buffer += chunk;
     if (this.buffer.length > MAX_HELPER_MESSAGE_BYTES) {
-      this.onClose("message exceeded the maximum size");
-      this.close();
+      this.socket.destroy();
+      this.handleClose("message exceeded the maximum size");
       return;
     }
     let newlineIndex = this.buffer.indexOf("\n");
@@ -188,7 +187,7 @@ export class PipeTransport implements HelperTransport {
     }
   }
 
-  private onClose(reason?: string): void {
+  private handleClose(reason?: string): void {
     if (this.closed) {
       return;
     }

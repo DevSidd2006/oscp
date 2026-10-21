@@ -1,2 +1,10 @@
 .superpowers/
 node_modules/
+dist/
+.dotnet/
+dotnet-install.ps1
+**/bin/
+**/obj/
+electron-stdout.log
+electron-stderr.log
+artifacts/helper-resolver-smoke/

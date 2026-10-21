@@ -1,15 +1,18 @@
 import type { StorageDevice } from "./storage";
 import type { AuditStatus } from "./audit";
+import type { ReportFormat, ReportExportResult } from "./reports";
+import type { WorkingCopyPreparation, WorkingCopyJob } from "./acquisition";
+import type { ImageInspection, SectorView } from "./image-inspection";
 
 /**
  * The narrow set of storage commands supported by the preload bridge in this phase.
  *
- * Only `storage.enumerate` is supported. The privileged Windows helper has no
+ * `storage.enumerate` and main-process-only `storage.resolvePath` are supported. The Windows helper has no
  * write, erase, recovery, or imaging API in this phase — it is read-only only.
  * Adding destructive commands requires a separate protocol specification and
  * safety review (see docs/windows-helper-protocol.md, "Destructive-operation gate").
  */
-export type StorageCommand = "storage.enumerate";
+export type StorageCommand = "storage.enumerate" | "storage.resolvePath";
 
 export interface StorageEnumerateRequest {
   command: "storage.enumerate";
@@ -59,10 +62,18 @@ export interface EnumerationResult {
 
 /**
  * The typed application API exposed to the renderer through the preload bridge.
- * Only read-only inspection and audit status are available; no write path
- * exists in this phase.
+ * Inspection and audit status are read-only. Report export writes only to a
+ * destination selected by the main-process save dialog. Working copies create
+ * new regular files after backing-device checks; no device write path exists.
  */
 export interface OscpApi {
   enumerateDevices(): Promise<EnumerationResult>;
   getAuditStatus(): Promise<AuditStatus>;
+  exportAuditReport(format: ReportFormat): Promise<ReportExportResult>;
+  prepareWorkingCopy(): Promise<WorkingCopyPreparation>;
+  startWorkingCopy(planId: string): Promise<WorkingCopyJob>;
+  getWorkingCopy(): Promise<WorkingCopyJob | null>;
+  cancelWorkingCopy(jobId: string): Promise<WorkingCopyJob>;
+  inspectImage(): Promise<{ status: "cancelled" } | { status: "inspected"; inspection: ImageInspection }>;
+  readImageSector(imageId: string, offsetBytes: number, sectorSize: 512 | 4096): Promise<SectorView>;
 }

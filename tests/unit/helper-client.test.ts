@@ -128,11 +128,11 @@ describe("HelperClient", () => {
     const promise = client.enumerateDevices();
     vi.advanceTimersByTime(0);
 
-    // Missing fingerprint -> validation error
+    // Invalid capacity must fail even when the normalizer derives a fingerprint.
     const responseLine = makeResponse({
       requestId: mockUuid,
       result: {
-        devices: [{ id: "d1", model: "M", serialNumber: "S", capacityBytes: 100, deviceType: "USB", isSystemDisk: false, accessMode: "ReadOnly" }],
+        devices: [{ id: "d1", model: "M", serialNumber: "S", capacityBytes: -1, deviceType: "USB", isSystemDisk: false, accessMode: "ReadOnly" }],
       },
     });
     client.feedLine(responseLine);

@@ -87,6 +87,10 @@ describe("helper client over a local socket", () => {
     expect(devices[0].id).toBe("demo-system");
     expect(client.isConnected).toBe(true);
     client.disconnect();
+    expect(client.isConnected).toBe(false);
+    await client.connect();
+    expect(await client.enumerateDevices()).toHaveLength(2);
+    client.disconnect();
   });
 
   it("reports an unavailable helper when nothing is listening", async () => {

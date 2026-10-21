@@ -46,11 +46,12 @@ function validAuditStatus() {
 }
 
 describe("preload bridge", () => {
-  it("exposes exactly the two read-only methods", () => {
+  it("exposes inspection, audit status, and constrained report export", () => {
     const api = createOscpApi(async () => validEnumeration());
 
-    expect(Object.keys(api).sort()).toEqual(["enumerateDevices", "getAuditStatus"]);
-    expect([...OSCP_BRIDGE_METHODS].sort()).toEqual(["enumerateDevices", "getAuditStatus"]);
+    const expected = ["cancelWorkingCopy", "enumerateDevices", "exportAuditReport", "getAuditStatus", "getWorkingCopy", "prepareWorkingCopy", "startWorkingCopy"];
+    expect(Object.keys(api).sort()).toEqual(expected);
+    expect([...OSCP_BRIDGE_METHODS].sort()).toEqual(expected);
   });
 
   it("exposes no destructive operation", () => {
@@ -99,5 +100,38 @@ describe("preload bridge", () => {
     const api = createOscpApi(async () => ({ ...validAuditStatus(), chainVerified: "yes" }));
 
     await expect(api.getAuditStatus()).rejects.toThrow();
+  });
+
+  it("routes report format without accepting a renderer-supplied path", async () => {
+    const invoke = vi.fn(async () => ({ status: "cancelled" }));
+    const api = createOscpApi(invoke);
+    expect(await api.exportAuditReport("html")).toEqual({ status: "cancelled" });
+    expect(invoke).toHaveBeenCalledWith(OSCP_BRIDGE_CHANNELS.exportAuditReport, "html");
+    await expect(api.exportAuditReport("exe" as never)).rejects.toThrow(/format/);
+    await expect(api.exportAuditReport({ format: "json", path: "C:/Windows/file" } as never)).rejects.toThrow(/format/);
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects malformed report export replies", async () => {
+    const api = createOscpApi(async () => ({ status: "saved", filePath: "/report.json", chainVerified: "yes", recordCount: -1 }));
+    await expect(api.exportAuditReport("json")).rejects.toThrow();
+  });
+
+  it("does not accept file paths or arbitrary objects as working-copy job identifiers", async () => {
+    const invoke = vi.fn();
+    const api = createOscpApi(invoke);
+    await expect(api.startWorkingCopy("C:/source.img")).rejects.toThrow(/identifier/);
+    await expect(api.cancelWorkingCopy({ outputPath: "C:/dest" } as never)).rejects.toThrow(/identifier/);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it("validates the constrained prepare and current-job replies", async () => {
+    const invoke = vi.fn(async (channel: string) => channel === OSCP_BRIDGE_CHANNELS.getWorkingCopy ? null : { status: "cancelled" });
+    const api = createOscpApi(invoke);
+    expect(await api.prepareWorkingCopy()).toEqual({ status: "cancelled" });
+    expect(await api.getWorkingCopy()).toBeNull();
+    expect(invoke.mock.calls).toEqual([[OSCP_BRIDGE_CHANNELS.prepareWorkingCopy], [OSCP_BRIDGE_CHANNELS.getWorkingCopy]]);
+    const malformed = createOscpApi(async () => ({ state: "completed" }));
+    await expect(malformed.getWorkingCopy()).rejects.toThrow();
   });
 });

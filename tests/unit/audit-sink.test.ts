@@ -125,4 +125,50 @@ describe("AuditSink", () => {
     expect(status.logPath).toBe(logPath);
     expect(status.lastEventAtUtc).toBeDefined();
   });
+
+  it("serializes concurrent appends across sinks for the same log", async () => {
+    const sinks = [new AuditSink({ filePath: logPath }), new AuditSink({ filePath: logPath })];
+    await Promise.all(Array.from({ length: 20 }, (_, index) => sinks[index % 2].append(
+      createAuditEvent({ type: "enumerate.start", result: "success", details: { index } }),
+    )));
+    expect((await sinks[0].readAll()).map(record => record.sequence)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+    expect((await sinks[0].verify()).ok).toBe(true);
+  });
+
+  it("preserves evidence of tail truncation when the app restarts", async () => {
+    const sink = new AuditSink({ filePath: logPath });
+    await sink.append(createAuditEvent({ type: "app.start", result: "success" }));
+    await sink.append(createAuditEvent({ type: "app.stop", result: "success" }));
+    const head = await fs.readFile(`${logPath}.head.json`, "utf8");
+    const firstLine = (await fs.readFile(logPath, "utf8")).split("\n")[0] + "\n";
+    await fs.writeFile(logPath, firstLine);
+    const restarted = new AuditSink({ filePath: logPath });
+    await expect(restarted.append(createAuditEvent({ type: "app.start", result: "success" }))).rejects.toThrow(/integrity/);
+    expect(await fs.readFile(`${logPath}.head.json`, "utf8")).toBe(head);
+    expect(await fs.readFile(logPath, "utf8")).toBe(firstLine);
+    expect((await restarted.verify()).ok).toBe(false);
+  });
+
+  it("refuses to append when the anchor is missing or malformed", async () => {
+    const sink = new AuditSink({ filePath: logPath });
+    await sink.append(createAuditEvent({ type: "app.start", result: "success" }));
+    await fs.unlink(`${logPath}.head.json`);
+    expect((await sink.status()).chainVerified).toBe(false);
+    await expect(sink.append(createAuditEvent({ type: "app.start", result: "success" }))).rejects.toThrow(/integrity/);
+    await fs.writeFile(`${logPath}.head.json`, "invalid");
+    expect((await sink.verify()).ok).toBe(false);
+  });
+
+  it("takes a consistent snapshot between concurrent writes", async () => {
+    const sink = new AuditSink({ filePath: logPath });
+    const first = sink.append(createAuditEvent({ type: "app.start", result: "success" }));
+    const snapshot = sink.snapshot();
+    const second = sink.append(createAuditEvent({ type: "enumerate.start", result: "success" }));
+    await Promise.all([first, second]);
+    const captured = await snapshot;
+    expect(captured.records).toHaveLength(1);
+    expect(captured.verification.ok).toBe(true);
+    expect(captured.verification.head?.digest).toBe(captured.records[0].digest);
+    expect((await sink.snapshot()).records).toHaveLength(2);
+  });
 });

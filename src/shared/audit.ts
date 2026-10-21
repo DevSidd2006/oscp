@@ -47,7 +47,7 @@ export interface AuditRecord {
  * The payload that is hashed to produce a record digest. `digest` itself is
  * never part of the hashed payload.
  */
-export type AuditRecordPayload = Omit<AuditRecord, "digest">;
+export type AuditRecordPayload = Omit<AuditRecord, "digest" | "previousDigest">;
 
 export type AuditProblemKind =
   | "malformed"

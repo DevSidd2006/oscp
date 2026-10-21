@@ -5,27 +5,34 @@
   "description": "Windows secure data erasure and forensic recovery platform",
   "main": "dist/main/main.js",
   "scripts": {
-    "dev": "vite --config vite.config.ts",
+    "start": "electron .",
+    "dev": "vite --config vite.config.mts",
     "build": "tsc --noEmit && npm run build:renderer && npm run build:main && npm run build:preload",
-    "build:renderer": "vite build --config vite.config.ts --mode renderer",
-    "build:main": "vite build --config vite.config.ts --mode main",
-    "build:preload": "vite build --config vite.config.ts --mode preload",
+    "build:renderer": "vite build --config vite.config.mts --mode renderer",
+    "build:main": "vite build --config vite.config.mts --mode main",
+    "build:preload": "vite build --config vite.config.mts --mode preload",
     "test": "vitest run",
-    "package:win": "electron-builder --win"
+    "package:win": "electron-builder --win",
+    "build:helper": "node scripts/build-helper.cjs",
+    "start:real": "node scripts/start-real.cjs",
+    "test:windows": "node tests/windows/helper-smoke.cjs",
+    "test:desktop": "electron tests/desktop/report-smoke.cjs",
+    "test:desktop:copy": "electron tests/desktop/working-copy-smoke.cjs",
+    "test:windows:copy": "vitest run --config vitest.native.config.mts"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "electron": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "45.0.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "electron-builder": "latest",
-    "typescript": "latest",
-    "vite": "latest",
-    "vitest": "latest"
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
   }
 }

@@ -20,11 +20,17 @@ export interface AuditLogContents {
   malformedLines: { lineNumber: number; content: string; reason: string }[];
 }
 
+export interface AuditSnapshot extends AuditLogContents {
+  verification: AuditVerification;
+}
+
 interface HeadAnchor {
   sequence: number;
   digest: string;
   updatedAtUtc: string;
 }
+
+const appendQueues = new Map<string, Promise<unknown>>();
 
 /**
  * Append-only JSON Lines audit storage with a chained SHA-256 digest.
@@ -48,11 +54,37 @@ export class AuditSink {
     return this.filePath;
   }
 
+  get protectedPaths(): readonly string[] {
+    return [this.filePath, this.headPath];
+  }
+
   /**
    * Appends an event to the log and returns the persisted record.
    */
   async append(event: AuditEvent): Promise<AuditRecord> {
+    return this.withLock(() => this.appendSerial(event));
+  }
+
+  private async withLock<T>(operation: () => Promise<T>): Promise<T> {
+    const resolved = path.resolve(this.filePath);
+    const key = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    const pending = (appendQueues.get(key) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(operation);
+    appendQueues.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (appendQueues.get(key) === pending) appendQueues.delete(key);
+    }
+  }
+
+  private async appendSerial(event: AuditEvent): Promise<AuditRecord> {
     const contents = await this.read();
+    const verification = await this.verifyContents(contents);
+    if (!verification.ok) {
+      throw new Error("Audit integrity check failed; existing log and head were preserved.");
+    }
     const previous = contents.records.at(-1);
 
     const payload = {
@@ -122,25 +154,41 @@ export class AuditSink {
   }
 
   async readAll(): Promise<AuditRecord[]> {
-    return (await this.read()).records;
+    return (await this.snapshot()).records;
+  }
+
+  /** Reads records and their verification under the same lock as appends. */
+  async snapshot(): Promise<AuditSnapshot> {
+    return this.withLock(async () => {
+      const contents = await this.read();
+      return { ...contents, verification: await this.verifyContents(contents) };
+    });
   }
 
   /**
    * Verifies the chain of the log as it currently exists on disk.
    */
   async verify(): Promise<AuditVerification> {
-    const contents = await this.read();
+    return (await this.snapshot()).verification;
+  }
+
+  private async verifyContents(contents: AuditLogContents): Promise<AuditVerification> {
     const head = await this.readHead();
-    return verifyAuditRecords(contents.records, head, contents.malformedLines);
+    const verification = verifyAuditRecords(contents.records, head, contents.malformedLines);
+    if (!head && contents.records.length > 0) {
+      verification.ok = false;
+      verification.problems.push({ kind: "head-mismatch", sequence: null,
+        detail: "The audit head anchor is missing or unreadable." });
+    }
+    return verification;
   }
 
   /**
    * Summarises the audit trail for the renderer.
    */
   async status(): Promise<AuditStatus> {
-    const contents = await this.read();
-    const head = await this.readHead();
-    const verification = verifyAuditRecords(contents.records, head, contents.malformedLines);
+    const contents = await this.snapshot();
+    const verification = contents.verification;
     const last = contents.records.at(-1);
     return {
       recordCount: verification.recordCount,

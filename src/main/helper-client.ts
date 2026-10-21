@@ -4,8 +4,9 @@ import { normalizeHelperDevice, validateStorageDevices } from "../shared/storage
 import type { OscpError, OscpErrorCode } from "../shared/contracts";
 import type { HelperTransport } from "./helper-transport";
 import { MAX_HELPER_MESSAGE_BYTES, createPipeTransport } from "./helper-transport";
+import { validateResolvedFileLocation, type ResolvedFileLocation } from "../shared/acquisition";
 
-export type StorageCommand = "storage.enumerate";
+export type StorageCommand = "storage.enumerate" | "storage.resolvePath";
 
 export interface HelperRequest {
   protocolVersion: string;
@@ -31,12 +32,13 @@ export interface HelperResponse {
 export interface HelperClientOptions {
   /** Pipe path used to connect to the helper. Defaults to the Windows named pipe. */
   pipePath?: string;
-  /** Request timeout in milliseconds. Default: 10000. */
+  /** Request timeout in milliseconds. Default: 30000. */
   timeoutMs?: number;
   /** Protocol version the client speaks. Default: "1.0". */
   protocolVersion?: string;
   /** Transport used to exchange messages with the helper. */
   transport?: HelperTransport;
+  transportFactory?: () => HelperTransport;
   /** Client name reported to the helper. */
   clientName?: string;
   /** Client version reported to the helper. */
@@ -44,7 +46,7 @@ export interface HelperClientOptions {
 }
 
 const DEFAULT_PIPE_PATH = "\\\\.\\pipe\\oscp-windows-helper-v1";
-const DEFAULT_TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_PROTOCOL_VERSION = "1.0";
 
 /**
@@ -87,7 +89,8 @@ export class HelperClient extends EventEmitter {
   private readonly pipePath: string;
   private readonly timeoutMs: number;
   private readonly protocolVersion: string;
-  private readonly transport: HelperTransport | undefined;
+  private transport: HelperTransport | undefined;
+  private readonly transportFactory: (() => HelperTransport) | undefined;
   private readonly clientName: string;
   private readonly clientVersion: string;
 
@@ -110,17 +113,22 @@ export class HelperClient extends EventEmitter {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.protocolVersion = options.protocolVersion ?? DEFAULT_PROTOCOL_VERSION;
     this.transport = options.transport;
+    this.transportFactory = options.transportFactory;
     this.clientName = options.clientName ?? "oscp-electron";
     this.clientVersion = options.clientVersion ?? "0.1.0";
 
-    if (this.transport) {
-      this.transport.onMessage((line) => {
+    if (this.transport) this.bindTransport(this.transport);
+  }
+
+  private bindTransport(transport: HelperTransport): void {
+      transport.onMessage((line) => {
+        if (transport !== this.transport) return;
         this.feedLine(line);
       });
-      this.transport.onClose((reason) => {
+      transport.onClose((reason) => {
+        if (transport !== this.transport) return;
         this.failPending(reason ?? "The helper connection closed.");
       });
-    }
   }
 
   /** Whether the client currently has a usable connection. */
@@ -139,7 +147,7 @@ export class HelperClient extends EventEmitter {
    */
   static forPipe(options: HelperClientOptions & { pipePath?: string } = {}): HelperClient {
     const pipePath = options.pipePath ?? DEFAULT_PIPE_PATH;
-    return new HelperClient({ ...options, transport: createPipeTransport(pipePath) });
+    return new HelperClient({ ...options, transportFactory: () => createPipeTransport(pipePath) });
   }
 
   /** Number of messages that could not be parsed. */
@@ -153,6 +161,12 @@ export class HelperClient extends EventEmitter {
    * for injected messages, which is how the unit tests drive it.
    */
   async connect(): Promise<void> {
+    if (this.connected) return;
+    if (this.transportFactory) {
+      this.transport?.close();
+      this.transport = this.transportFactory();
+      this.bindTransport(this.transport);
+    }
     if (this.transport) {
       try {
         await this.transport.connect();
@@ -257,6 +271,14 @@ export class HelperClient extends EventEmitter {
     }
   }
 
+  /** Trusted main-process dialog paths only; never exposed as a renderer method. */
+  async resolvePath(filePath: string): Promise<ResolvedFileLocation> {
+    if (!this.connected) await this.connect();
+    const response = await this.request("storage.resolvePath", { path: filePath });
+    if (!response.ok) throw new HelperRequestError(response.error?.code ?? "INTERNAL_ERROR", response.error?.message ?? "Storage path resolution failed.");
+    return validateResolvedFileLocation(response.result?.location);
+  }
+
   /**
    * Feeds a raw line received from the helper pipe into the client. The client
    * parses, validates, and correlates it with a pending request.
@@ -334,6 +356,7 @@ export class HelperClient extends EventEmitter {
   /** Closes all pending requests with a disconnect error. */
   disconnect(): void {
     this.failPending("Helper client disconnected.");
+    this.transport?.close();
     this.connected = false;
     this.emit("disconnect");
   }
@@ -376,10 +399,11 @@ export class HelperClient extends EventEmitter {
       return { kind: "malformed", raw, reason: "missing ok field" };
     }
 
-    return { kind: "response", response: obj as HelperResponse };
+    return { kind: "response", response: obj as unknown as HelperResponse };
   }
 
   private validateResponseShape(response: HelperResponse): boolean {
+    if (response.protocolVersion !== this.protocolVersion) return false;
     if (typeof response.protocolVersion !== "string") return false;
     if (typeof response.requestId !== "string" || response.requestId.length === 0) return false;
     if (typeof response.ok !== "boolean") return false;

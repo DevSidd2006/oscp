@@ -1,0 +1,68 @@
+const { app, BrowserWindow, ipcMain } = require("electron");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), "oscp-inspect-smoke-"));
+app.setPath("userData", profile);
+let window, finished = false, choices = 0;
+const reads = [];
+const imageId = "00000000-0000-4000-8000-000000000003";
+const watchdog = setTimeout(() => finish(new Error("20-second watchdog expired")), 20000);
+ipcMain.handle("storage:enumerate", () => ({ dataSource: "demo", devices: [], capabilities: { secureErase: false, fileRecovery: false, forensicImaging: false, auditTrail: true, reason: "Synthetic test" }, capturedAtUtc: "2026-10-21T00:00:00Z", helperStatus: "not-required", warnings: [] }));
+ipcMain.handle("audit:status", () => ({ recordCount: 0, lastEventAtUtc: null, chainVerified: true, problems: [], logPath: "synthetic" }));
+ipcMain.handle("working-copy:status", () => null);
+ipcMain.handle("image:inspect", () => {
+  if (++choices === 1) return { status: "cancelled" };
+  return { status: "inspected", inspection: { imageId, fileName: "synthetic.img", sizeBytes: 1024, capturedAtUtc: "2026-10-21T00:00:00Z", layout: "volume", warnings: [], partitions: [{ index: 1, offsetBytes: 0, sizeBytes: 1024, type: "volume", filesystem: { kind: "FAT32", bytesPerSector: 512, sectorsPerCluster: 8, clusterSizeBytes: 4096, totalSectors: 2, volumeBytes: 1024, details: { label: "Synthetic" }, warnings: [] } }] } };
+});
+ipcMain.handle("image:read-sector", (_event, id, offsetBytes, sectorSize) => {
+  reads.push([id, offsetBytes, sectorSize]);
+  if (offsetBytes === 512) throw new Error("Synthetic EOF read failure");
+  return { imageId: id, offsetBytes, sectorSize, bytes: Array.from({ length: 512 }, (_, index) => index < 4 ? [60, 38, 65, 0][index] : 0) };
+});
+function finish(error) {
+  if (finished) return;
+  finished = true; clearTimeout(watchdog);
+  console[error ? "error" : "log"](error ? `Image inspection desktop smoke failed: ${error.stack || error}` : "Image inspection desktop smoke passed.");
+  if (window && !window.isDestroyed()) window.destroy();
+  app.once("will-quit", () => { try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }); } catch (cause) { console.error(cause.message); process.exitCode = 1; } });
+  process.exitCode = error ? 1 : 0; app.quit();
+}
+app.whenReady().then(async () => {
+  window = new BrowserWindow({ show: false, webPreferences: { preload: path.resolve("dist/main/preload.js"), sandbox: true, contextIsolation: true, nodeIntegration: false } });
+  const run = source => window.webContents.executeJavaScript(source);
+  const wait = async expression => { for (let i = 0; i < 100; i++) { if (await run(expression)) return; await new Promise(resolve => setTimeout(resolve, 50)); } throw new Error(`Timed out: ${expression}`); };
+  const click = text => run(`[...document.querySelectorAll('.image-inspector-section button')].find(button => button.textContent === ${JSON.stringify(text)}).click()`);
+  const setOffset = value => run(`(() => { const input = document.querySelector('.sector-controls input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)}); input.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await window.loadFile(path.resolve("dist/renderer/index.html"));
+  await wait("document.querySelector('.image-inspector-section') !== null");
+  await click("Choose image to inspect");
+  await wait("document.querySelector('.image-inspector-section [role=status]').textContent.includes('cancelled')");
+  await click("Choose image to inspect");
+  await wait("document.querySelector('.image-table') !== null");
+  assert.match(await run("document.querySelector('.image-table').textContent"), /FAT32/);
+  assert.match(await run("document.querySelector('.image-table').textContent"), /4096 bytes/);
+  await click("Read sector");
+  await wait("document.querySelector('.sector-hex') !== null");
+  assert.match(await run("document.querySelector('.sector-hex').textContent"), /3c 26 41 00/);
+  assert.ok((await run("document.querySelector('.sector-hex').textContent")).includes("<&A."));
+  assert.equal(await run("document.querySelector('.sector-hex').children.length"), 0);
+  assert.equal(await run("[...document.querySelectorAll('.image-inspector-section button')].find(button => button.textContent === 'Previous sector').disabled"), true);
+  await setOffset("1");
+  await click("Read sector");
+  await wait("document.querySelector('.image-inspector-section [role=alert]')?.textContent.includes('aligned')");
+  assert.equal(reads.length, 1);
+  assert.equal(await run("document.querySelector('.sector-hex')"), null);
+  await setOffset("1024");
+  await click("Read sector");
+  await wait("document.querySelector('.image-inspector-section [role=alert]')?.textContent.includes('within')");
+  assert.equal(reads.length, 1);
+  await setOffset("512");
+  await click("Read sector");
+  await wait("document.querySelector('.image-inspector-section [role=alert]')?.textContent.includes('Synthetic EOF')");
+  assert.deepEqual(reads, [[imageId, 0, 512], [imageId, 512, 512]]);
+  assert.equal(await run("[...document.querySelectorAll('.image-inspector-section button')].find(button => button.textContent === 'Next sector').disabled"), true);
+  assert.equal(await run("document.querySelector('.image-inspector-section [role=status]').getAttribute('aria-live')"), "polite");
+  finish();
+}).catch(finish);

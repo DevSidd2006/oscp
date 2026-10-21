@@ -55,6 +55,7 @@ export function createStorageService(options: StorageServiceOptions): StorageSer
     );
 
     try {
+      if (mode === "helper" && !client.isConnected) await client.connect();
       const devices = await client.enumerateDevices();
       await audit.append(
         createAuditEvent({

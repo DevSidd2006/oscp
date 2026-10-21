@@ -192,3 +192,11 @@ The exact Windows device path is an internal identifier and must not be treated 
 - Automatic device selection
 
 Those capabilities require separate protocol specifications and additional safety review before implementation.
+
+## Implemented existing-path resolver
+
+`storage.resolvePath` accepts an arguments object containing a main-process-selected `path` to an existing local regular file or directory. This command is not exposed as a renderer path API. Its result is `{ location: { canonicalPath, physicalDeviceIds, freeBytes, kind } }`, where kind is `file` or `directory`. The canonical path is a normalized Windows volume GUID path obtained from the opened file handle. Valid canonical paths can be submitted again for revalidation; volume roots with a trailing slash are directories, while raw volume handles are refused.
+
+The helper obtains the volume disk extents and matches each backing Windows disk to its verified physical identity. It refuses unresolved or unsupported topology, including RAID, Storage Spaces, virtual disks, network paths and incomplete physical mappings. Alternate data streams, GLOBALROOT, raw device paths and missing paths are rejected. Unknown topology is not inferred from a drive letter or model name.
+
+The resolver is a point-in-time metadata operation; it does not retain an acquisition handle or write to the path. Regular-image-file working-copy jobs re-resolve selected paths before starting and after opening the exclusive output file, and verify source file identity and output hashes. These jobs do not enable physical-disk acquisition or recovery. Future raw acquisition requires a helper-owned source handle and its own identity, cancellation and verification protocol.
