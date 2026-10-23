@@ -179,6 +179,9 @@ export async function inspectImageLayout(read: (offset: number, length: number) 
 
 function overlaps(partitions: ImagePartition[], warnings: string[]) {
   const sorted = [...partitions].sort((a, b) => a.offsetBytes - b.offsetBytes);
-  for (let i = 0; i < sorted.length; i++) for (let j = i + 1; j < sorted.length && sorted[j].offsetBytes < sorted[i].offsetBytes + sorted[i].sizeBytes; j++)
-    warnings.push(`Partitions ${sorted[i].index} and ${sorted[j].index} overlap; layout is not safe for recovery assumptions.`);
+  for (let i = 0; i + 1 < sorted.length; i++) {
+    // One diagnostic per starting range keeps adversarial overlap output bounded.
+    if (sorted[i + 1].offsetBytes < sorted[i].offsetBytes + sorted[i].sizeBytes)
+      warnings.push(`Partitions ${sorted[i].index} and ${sorted[i + 1].index} overlap; layout is not safe for recovery assumptions.`);
+  }
 }

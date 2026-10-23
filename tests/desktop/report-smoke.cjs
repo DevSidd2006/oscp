@@ -8,6 +8,7 @@ const path = require("node:path");
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), "oscp-report-smoke-"));
 app.setPath("userData", userData);
 const formats = [];
+let evidenceExports = 0;
 let window;
 let finished = false;
 const watchdog = setTimeout(() => finish(new Error("20-second watchdog expired")), 20_000);
@@ -38,6 +39,13 @@ ipcMain.handle("audit:status", () => ({
   logPath: "synthetic-audit.jsonl",
 }));
 ipcMain.handle("working-copy:status", () => null);
+ipcMain.handle("secure-erase:get", () => null);
+ipcMain.handle("delivery:status", () => ({ schemaVersion: 1, capturedAtUtc: "2026-10-23T00:00:00Z", appVersion: "0.1.0", platform: "win32", packaged: false, installerEnabled: false, winpeEnabled: false, checks: [
+  { id: "package-manifest", label: "Application package manifest", status: "invalid", detail: "Synthetic manifest mismatch." },
+  { id: "signature", label: "Authenticode signature and trust", status: "unverified", detail: "No verifier was run." },
+  { id: "clean-install", label: "Clean install, upgrade and uninstall", status: "unverified", detail: "No installer was launched." },
+], limitations: ["Safe mode: observations only."] }));
+ipcMain.handle("delivery:save-evidence", () => ++evidenceExports === 1 ? { status: "cancelled" } : { status: "saved", filePath: "C:\\Synthetic\\release-evidence.json" });
 ipcMain.handle("audit:export-report", (_event, format) => {
   formats.push(format);
   if (formats.length === 1) return { status: "cancelled" };
@@ -59,7 +67,7 @@ app.whenReady().then(async () => {
   };
   await window.loadFile(path.resolve("dist/renderer/index.html"));
   await waitFor("document.querySelector('.audit-line')?.textContent.includes('7')");
-  assert.deepEqual(await run("Object.keys(window.oscp).sort()"), ["cancelWorkingCopy", "enumerateDevices", "exportAuditReport", "getAuditStatus", "getWorkingCopy", "prepareWorkingCopy", "startWorkingCopy"]);
+  assert.deepEqual(await run("Object.keys(window.oscp).sort()"), ["analyzeImageRecords", "cancelFat32Extraction", "cancelImageFileExport", "cancelSecureErase", "cancelWorkingCopy", "createRecoveryCase", "enumerateDevices", "exportAuditReport", "getAuditStatus", "getDeliveryReadiness", "getFat32Extraction", "getImageFileExport", "getSecureErase", "getWorkingCopy", "inspectImage", "listImageFileRecords", "prepareSecureErase", "prepareWorkingCopy", "readImageSector", "saveReleaseEvidence", "startFat32Extraction", "startImageFileExport", "startSecureErase", "startWorkingCopy"]);
   await run("[...document.querySelectorAll('nav button')].find(button => button.textContent === 'Reports').click()");
   assert.equal(await run("document.activeElement.id"), "reports-heading");
   assert.equal(await run("document.querySelector('nav button[aria-current]').textContent"), "Reports");
@@ -80,7 +88,20 @@ app.whenReady().then(async () => {
   await waitFor("document.querySelector('.report-error') !== null");
   assert.equal(await run("document.querySelector('.report-error').getAttribute('role')"), "alert");
   assert.match(await run("document.querySelector('.report-error').textContent"), /Synthetic export failure/);
-  assert.equal(await run("[...document.querySelectorAll('.report-actions button')].every(button => !button.disabled)"), true);
+  assert.equal(await run("[...document.querySelectorAll('.reports-section .report-actions button')].every(button => !button.disabled)"), true);
   assert.deepEqual(formats, ["json", "html", "json"]);
+  await click("Check delivery prerequisites");
+  await waitFor("document.querySelector('.delivery-checks') !== null");
+  const delivery = await run("document.querySelector('.delivery-checks').textContent");
+  assert.match(delivery, /Application package manifestinvalid/);
+  assert.match(delivery, /Authenticode signature and trustunverified/);
+  assert.match(delivery, /Clean install, upgrade and uninstallunverified/);
+  assert.match(await run("document.querySelector('.delivery-summary').textContent"), /1 invalid/);
+  assert.equal(await run("[...document.querySelectorAll('.delivery-readiness-section button:disabled')].length"), 2);
+  await click("Save release evidence");
+  await waitFor("document.querySelector('.delivery-readiness-section [role=status]').textContent.includes('export cancelled')");
+  await click("Save release evidence");
+  await waitFor("document.querySelector('.delivery-readiness-section [role=status]').textContent.includes('release-evidence.json')");
+  assert.equal(evidenceExports, 2);
   finish();
 }).catch(finish);

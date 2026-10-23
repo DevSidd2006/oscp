@@ -3,6 +3,13 @@ import type { AuditStatus } from "./audit";
 import type { ReportFormat, ReportExportResult } from "./reports";
 import type { WorkingCopyPreparation, WorkingCopyJob } from "./acquisition";
 import type { ImageInspection, SectorView } from "./image-inspection";
+import type { SecureEraseConfirmation, SecureEraseJob, SecureErasePlan } from "./secure-erase";
+import type { RecoveryCaseResult } from "./recovery-case";
+import type { DeliveryReadiness, ReleaseEvidenceResult } from "./delivery-readiness";
+import type { Fat32ExtractionStart, Fat32ExtractionJob } from "./fat32-extraction";
+import type { ImageFileRecords } from "./file-records";
+import type { WorkflowAnalysis } from "./recovery-provider";
+import type { ImageExportJob } from "./image-export-workflow";
 
 /**
  * The narrow set of storage commands supported by the preload bridge in this phase.
@@ -76,4 +83,21 @@ export interface OscpApi {
   cancelWorkingCopy(jobId: string): Promise<WorkingCopyJob>;
   inspectImage(): Promise<{ status: "cancelled" } | { status: "inspected"; inspection: ImageInspection }>;
   readImageSector(imageId: string, offsetBytes: number, sectorSize: 512 | 4096): Promise<SectorView>;
+  listImageFileRecords(imageId: string, partitionIndex: number): Promise<ImageFileRecords>;
+  /** Saves case metadata through a native directory picker; no file recovery. */
+  createRecoveryCase(imageId: string): Promise<RecoveryCaseResult>;
+  getDeliveryReadiness(): Promise<DeliveryReadiness>;
+  saveReleaseEvidence(): Promise<ReleaseEvidenceResult>;
+  startFat32Extraction(imageId: string, partitionIndex: number, recordId: string): Promise<Fat32ExtractionStart>;
+  getFat32Extraction(): Promise<Fat32ExtractionJob | null>;
+  cancelFat32Extraction(jobId: string): Promise<Fat32ExtractionJob>;
+  analyzeImageRecords(imageId: string): Promise<WorkflowAnalysis>;
+  startImageFileExport(imageId: string, recordId: string): Promise<ImageExportJob>;
+  getImageFileExport(): Promise<ImageExportJob | null>;
+  cancelImageFileExport(requestId: string): Promise<ImageExportJob>;
+  /** Guarded preflight/refusal coordinator; main registers no physical erase provider. */
+  prepareSecureErase(deviceId: string): Promise<SecureErasePlan>;
+  startSecureErase(planId: string, confirmation: SecureEraseConfirmation): Promise<SecureEraseJob>;
+  getSecureErase(): Promise<SecureEraseJob | null>;
+  cancelSecureErase(jobId: string): Promise<SecureEraseJob>;
 }

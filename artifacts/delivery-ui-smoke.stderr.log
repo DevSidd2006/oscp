@@ -1,0 +1,2 @@
+Error occurred in handler for 'audit:export-report': Error: Synthetic export failure
+    at C:\Users\Sid\oscp\tests\desktop\report-smoke.cjs:52:9

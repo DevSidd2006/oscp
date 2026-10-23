@@ -1,0 +1,2 @@
+Error occurred in handler for 'image:read-sector': Error: Synthetic EOF read failure
+    at C:\Users\Sid\oscp\tests\desktop\image-inspection-smoke.cjs:48:34

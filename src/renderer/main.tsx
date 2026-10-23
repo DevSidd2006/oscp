@@ -6,6 +6,9 @@ import type { ReportFormat, ReportExportResult } from "../shared/reports";
 import "./styles.css";
 import { WorkingCopyPanel } from "./WorkingCopyPanel";
 import { ImageInspectorPanel } from "./ImageInspectorPanel";
+import { WorkflowReadinessPanel } from "./WorkflowReadinessPanel";
+import { DeliveryReadinessPanel } from "./DeliveryReadinessPanel";
+import { SecureErasePanel } from "./SecureErasePanel";
 
 const formatBytes = (bytes: number) => `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 
@@ -30,9 +33,10 @@ function App() {
   const [exportError, setExportError] = useState<string | null>(null);
   const exportInProgress = useRef(false);
 
-  const navigateTo = (section: "overview" | "reports") => {
+  const navigateTo = (section: "overview" | "copy" | "inspector" | "reports") => {
     setActiveSection(section);
-    const target = document.getElementById(section === "reports" ? "reports-heading" : "main-content");
+    const targets = { overview: "main-content", copy: "working-copy-heading", inspector: "image-inspector-heading", reports: "reports-heading" };
+    const target = document.getElementById(targets[section]);
     target?.focus({ preventScroll: true });
     target?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -87,16 +91,30 @@ function App() {
     <main className="shell">
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark" aria-hidden="true">O</span><div><strong>OSCP</strong><small>Secure data tools</small></div></div>
-      <nav aria-label="Primary navigation"><button className={`nav-item${activeSection === "overview" ? " active" : ""}`} aria-current={activeSection === "overview" ? "location" : undefined} onClick={() => navigateTo("overview")}>Overview</button><button className="nav-item" disabled>Recovery <span>Planned</span></button><button className="nav-item" disabled>Secure erase <span>Planned</span></button><button className={`nav-item${activeSection === "reports" ? " active" : ""}`} aria-current={activeSection === "reports" ? "location" : undefined} onClick={() => navigateTo("reports")}>Reports</button></nav>
-      <div className="sidebar-footer"><span className="status-dot" aria-hidden="true" /> Read-only foundation<br /><small>Destructive operations are disabled</small></div>
+      <p className="navigation-label">WORKSPACE</p>
+      <nav aria-label="Primary navigation">
+        <button className={`nav-item${activeSection === "overview" ? " active" : ""}`} aria-current={activeSection === "overview" ? "location" : undefined} onClick={() => navigateTo("overview")}>Overview</button>
+        <button className={`nav-item${activeSection === "copy" ? " active" : ""}`} aria-current={activeSection === "copy" ? "location" : undefined} onClick={() => navigateTo("copy")}>Working copy</button>
+        <button className={`nav-item${activeSection === "inspector" ? " active" : ""}`} aria-current={activeSection === "inspector" ? "location" : undefined} onClick={() => navigateTo("inspector")}>Image inspector</button>
+        <button className={`nav-item${activeSection === "reports" ? " active" : ""}`} aria-current={activeSection === "reports" ? "location" : undefined} onClick={() => navigateTo("reports")}>Reports</button>
+        <button className="nav-item" disabled>Recovery <span>Planned</span></button>
+        <button className="nav-item" disabled>Secure erase <span>Planned</span></button>
+      </nav>
+      <div className="sidebar-footer"><span className="status-dot" aria-hidden="true" /> Protected workspace<br /><small>Physical drive writes and erasure are disabled.</small></div>
     </aside>
     <section className="content" id="main-content" tabIndex={-1}>
-      <header><div><p className="eyebrow">OPERATING SYSTEM PROJECT</p><h1>Storage overview</h1><p className="muted">Inspect your drives safely before choosing a recovery or erasure task.</p></div><button className="outline-button" onClick={() => void inspectDrives()} disabled={loading} aria-describedby="scan-status">{loading ? "Scanning…" : "Refresh drives"}</button></header>
+      <header><div><p className="eyebrow">STORAGE WORKSPACE</p><h1>Storage overview</h1><p className="muted">A clear view of your drives, image files, and audit records.</p></div><button className="outline-button refresh-button" onClick={() => void inspectDrives()} disabled={loading} aria-describedby="scan-status">{loading ? "Scanning…" : "Refresh drives"}</button></header>
       <p className="sr-only" id="scan-status" aria-live="polite">{loading ? "Scanning connected drives." : `${devices.length} drive${devices.length === 1 ? "" : "s"} detected.`}</p>
 
       {isDemo && <div className="demo-banner" role="status"><span aria-hidden="true">◐</span><div><strong>Demo data</strong><p>The entries below are synthetic fixtures from the built-in fake provider. They are <em>not</em> your connected drives, and no real storage was read.</p></div></div>}
 
-      <div className="safety" role="status"><span aria-hidden="true">盾</span><div><strong>Drive inspection is read only</strong><p>Physical drive writes and erasure are disabled. Working-copy jobs create a new output file from an existing image file.</p></div></div>
+      <div className="safety" role="status"><svg aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="m12 3 8 3v5c0 5-8 10-8 10S4 16 4 11V6z"/><path d="m8 11 3 3 5-6"/></svg><div><strong>Drive inspection is read only</strong><p>Physical drive writes and erasure are disabled. Working-copy jobs create a new output file from an existing image file.</p></div></div>
+
+      <div className="overview-metrics" aria-label="Workspace status">
+        <article className="metric-card"><p>Detected drives</p><strong>{loading ? "—" : devices.length}</strong><span>{isDemo ? "Synthetic demo devices" : result ? "From Windows storage inspection" : "No inspection data available"}</span></article>
+        <article className="metric-card"><p>Data source</p><strong className="metric-text">{loading ? "Scanning" : isDemo ? "Demo mode" : result ? "Connected drives" : "Unavailable"}</strong><span>{isDemo ? "Fixtures are clearly labeled below" : "Physical drive inspection stays read only"}</span></article>
+        <article className="metric-card"><p>Audit integrity</p><strong className={`metric-text ${audit?.chainVerified ? "cap-on" : "cap-off"}`}>{audit ? audit.chainVerified ? "Verified locally" : "Needs review" : "Unavailable"}</strong><span>{audit ? `${audit.recordCount} recorded events · local chain check` : "Audit status has not been loaded"}</span></article>
+      </div>
 
       {error && <div className="error-message" role="alert"><strong>Drive inspection failed.</strong><p>{error.message}</p>{error.code && <p className="error-code">Reported code: {error.code}</p>}</div>}
 
@@ -129,13 +147,18 @@ function App() {
         <section className="panel" aria-labelledby="capabilities-heading">
           <h2 id="capabilities-heading">Capabilities</h2>
           <ul className="capability-list">
-            <li><span>Inspect drives</span><b className="cap-on">Available</b></li>
+            <li><span>Inspect drives</span><b className={result ? "cap-on" : "cap-off"}>{result ? isDemo ? "Demo data" : "Connected" : loading ? "Checking" : "Unavailable"}</b></li>
+            <li><span>Image-file working copy</span><b className="cap-on">Available</b></li>
+            <li><span>Image metadata and sectors</span><b className="cap-on">Read only</b></li>
             <li><span>Recover deleted files</span><b className="cap-off">Disabled</b></li>
             <li><span>Securely erase</span><b className="cap-off">Disabled</b></li>
-            <li><span>Forensic imaging</span><b className="cap-off">Disabled</b></li>
-            <li><span>Audit trail</span><b className="cap-on">Active</b></li>
+            <li><span>Physical-disk acquisition</span><b className="cap-off">Disabled</b></li>
+            <li><span>Windows PE boot media</span><b className="cap-off">Planned</b></li>
+            <li><span>Audit chain</span><b className={audit?.chainVerified ? "cap-on" : "cap-off"}>{audit ? audit.chainVerified ? "Verified locally" : "Integrity problem" : "Unavailable"}</b></li>
           </ul>
           {result && <p className="panel-note">{result.capabilities.reason}</p>}
+          <p className="panel-note">Recovery and erasure workflows remain disabled until their execution and verification controls are implemented. Image-file tools do not enable physical-disk acquisition.</p>
+          <p className="panel-note">Development build. Installer creation and packaged-app validation are separate release checks; a successful source build does not establish installation readiness.</p>
         </section>
         <section className="panel" aria-labelledby="audit-heading">
           <h2 id="audit-heading">Audit trail</h2>
@@ -148,6 +171,7 @@ function App() {
         </section>
       </div>
 
+      <div className="workspace-divider"><p className="eyebrow">IMAGE FILE WORKSPACE</p><h2>Work with an existing image</h2><p>Prepare a working copy, examine stored bytes, and keep source data protected.</p></div>
       <WorkingCopyPanel />
       <ImageInspectorPanel />
 
@@ -172,6 +196,11 @@ function App() {
         </div>
         {exportError && <p className="report-error" role="alert">{exportError}</p>}
       </section>
+
+      <div className="workspace-divider"><p className="eyebrow">PROJECT READINESS</p><h2>Upcoming workflows and delivery</h2><p>Review implementation requirements and validation evidence.</p></div>
+      <WorkflowReadinessPanel />
+      <DeliveryReadinessPanel />
+      <SecureErasePanel devices={devices} dataSource={result?.dataSource ?? null} />
 
       <div className="task-section"><p className="eyebrow">CHOOSE A TASK</p><div className="task-grid"><button className="task-card primary" disabled={loading} onClick={() => void inspectDrives()}><b>Inspect drives</b><span>View devices, partitions, and storage details.</span><i aria-hidden="true">→</i></button><button className="task-card" disabled><b>Recover deleted files</b><span>Restore files with a guided recovery workflow.</span><em>Disabled until the safety gates exist</em></button><button className="task-card" disabled><b>Securely erase</b><span>Prepare a device for safe reuse or disposal.</span><em>Disabled until the safety gates exist</em></button></div></div>
     </section>

@@ -13,6 +13,7 @@ const plan = { planId: "00000000-0000-4000-8000-000000000001", sourcePath: "C:\\
 const job = { ...plan, jobId: "00000000-0000-4000-8000-000000000002", copiedBytes: 25, state: "running", startedAtUtc: "2026-10-21T00:00:00Z", endedAtUtc: null, sourceSha256: null, outputSha256: null, error: null, partialOutputRetained: false };
 ipcMain.handle("storage:enumerate", () => ({ dataSource: "demo", devices: [], capabilities: { secureErase: false, fileRecovery: false, forensicImaging: false, auditTrail: true, reason: "Synthetic test" }, capturedAtUtc: "2026-10-21T00:00:00Z", helperStatus: "not-required", warnings: [] }));
 ipcMain.handle("audit:status", () => ({ recordCount: 0, lastEventAtUtc: null, chainVerified: true, problems: [], logPath: "synthetic" }));
+ipcMain.handle("secure-erase:get", () => null);
 ipcMain.handle("working-copy:prepare", () => {
   selections++;
   if (selections === 1) return { status: "cancelled" };
@@ -64,6 +65,8 @@ app.whenReady().then(async () => {
   assert.match(await run("document.querySelector('.working-copy-details').textContent"), /source.img/);
   await click("Start working copy");
   await wait("document.querySelector('.copy-state')?.textContent.includes('running')");
+  assert.match(await run("document.querySelector('.working-copy-job').textContent"), /not physical-disk acquisition/);
+  assert.ok((await run("document.querySelector('.working-copy-job').textContent")).includes(job.jobId));
   assert.equal(await run("document.querySelector('#copy-progress').value"), 25);
   await wait("document.querySelector('.copy-state')?.textContent.includes('verifying')");
   await wait("document.querySelector('.copy-verification') !== null");

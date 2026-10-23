@@ -32,6 +32,8 @@ describe("stored image inspection service", () => {
     expect(image).toMatchObject({ fileName: "fixture.img", sizeBytes: fixture.length, layout: "unknown" });
     expect(image.imageId).toMatch(/^[a-f0-9-]{36}$/);
     expect(Number.isNaN(Date.parse(image.capturedAtUtc))).toBe(false);
+    expect(image.warnings.join(" ")).toContain("separate physical disk");
+    expect(image.warnings.join(" ")).toContain("does not establish that deleted files can be recovered");
     expect(await service.readImageSector(image.imageId, 4096, 512)).toEqual({ imageId: image.imageId, offsetBytes: 4096, sectorSize: 512, bytes: [...fixture.subarray(4096, 4608)] });
     expect((await service.readImageSector(image.imageId, 4096, 4096)).bytes).toEqual([...fixture.subarray(4096)]);
     expect(await fs.readFile(imagePath)).toEqual(fixture);
@@ -44,6 +46,21 @@ describe("stored image inspection service", () => {
     chooseImage.mockResolvedValue(null);
     expect(await service.inspectImage()).toEqual({ status: "cancelled" });
     await expect(service.readImageSector("stale", 0, 512)).rejects.toThrow("stale or invalid");
+  });
+
+  it("returns real stored NTFS boot geometry without claiming recovered files", async () => {
+    fixture.write("NTFS    ", 3, "ascii");
+    fixture.writeUInt16LE(512, 11);
+    fixture[13] = 1;
+    fixture.writeBigUInt64LE(16n, 40);
+    fixture.writeBigUInt64LE(1n, 48);
+    fixture.writeBigUInt64LE(2n, 56);
+    fixture[510] = 0x55; fixture[511] = 0xaa;
+    await fs.writeFile(imagePath, fixture);
+    const image = await inspect();
+    expect(image.layout).toBe("volume");
+    expect(image.partitions[0].filesystem).toMatchObject({ kind: "NTFS", bytesPerSector: 512, sectorsPerCluster: 1, clusterSizeBytes: 512, totalSectors: 16, volumeBytes: 8192 });
+    expect(await fs.readFile(imagePath)).toEqual(fixture);
   });
 
   it("rejects renderer-supplied IDs and invalid sector alignment, sizes and bounds", async () => {
@@ -92,9 +109,7 @@ describe("stored image inspection service", () => {
 
   it("rejects path replacement while preserving the original held source", async () => {
     const image = await inspect();
-    const replacement = path.join(directory, "replacement.img");
-    await fs.writeFile(replacement, fixture);
-    await fs.rename(replacement, imagePath);
+    await fs.writeFile(imagePath, fixture);
     await expect(service.readImageSector(image.imageId, 0, 512)).rejects.toThrow("source image changed");
     expect(await fs.readFile(imagePath)).toEqual(fixture);
   });
@@ -107,5 +122,26 @@ describe("stored image inspection service", () => {
     await expect(service.readImageSector(image.imageId, 0, 512)).rejects.toThrow("closed");
     await expect(service.inspectImage()).rejects.toThrow("closed");
     await fs.rename(imagePath, path.join(directory, "closed.img"));
+  });
+  it("inventories FAT32 root records through the retained read-only image handle", async () => {
+    const imageSize = 70000 * 512, rootOffset = (32 + 1200) * 512;
+    const boot = Buffer.alloc(512); boot[510] = 0x55; boot[511] = 0xaa; boot.write("FAT32   ", 82); boot.writeUInt16LE(512, 11); boot[13] = 1;
+    boot.writeUInt16LE(32, 14); boot[16] = 2; boot.writeUInt32LE(70000, 32); boot.writeUInt32LE(600, 36); boot.writeUInt32LE(2, 44);
+    const fat = Buffer.alloc(12); fat.writeUInt32LE(0xffffff8, 8);
+    const root = Buffer.alloc(512); root.write("FILE    TXT"); root[11] = 0x20; root.writeUInt16LE(5, 26); root.writeUInt32LE(100, 28);
+    const writer = await fs.open(imagePath, "w"); await writer.truncate(imageSize);
+    for (const [offset, bytes] of [[0, boot], [32 * 512, fat], [632 * 512, fat], [rootOffset, root]] as const) await writer.write(bytes, 0, bytes.length, offset);
+    await writer.close();
+    const before = await fs.stat(imagePath, { bigint: true }), image = await inspect();
+    const inventory = await service.listImageFileRecords(image.imageId, 1);
+    expect(inventory).toMatchObject({ imageId: image.imageId, filesystem: "FAT32", status: "root-inventory", partitionIndex: 1 });
+    expect(inventory.records[0]).toMatchObject({ name: "FILE.TXT", assessment: "metadata-only", directoryEntryOffsetBytes: rootOffset });
+    const after = await fs.stat(imagePath, { bigint: true }); expect(after.mtimeNs).toBe(before.mtimeNs); expect(after.ctimeNs).toBe(before.ctimeNs);
+    await expect(service.listImageFileRecords(image.imageId, 2)).rejects.toThrow("not found");
+    await expect(service.listImageFileRecords(image.imageId, 0)).rejects.toThrow("valid image partition");
+    await expect(service.listImageFileRecords("C:/source.img", 1)).rejects.toThrow("identifier");
+    await fs.appendFile(imagePath, "changed");
+    await expect(service.listImageFileRecords(image.imageId, 1)).rejects.toThrow("source image changed");
+    await expect(service.listImageFileRecords(image.imageId, 1)).rejects.toThrow("stale");
   });
 });

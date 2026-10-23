@@ -56,7 +56,7 @@ export function WorkingCopyPanel() {
   const cancel = () => perform(async () => { if (job) setJob(await window.oscp.cancelWorkingCopy(job.jobId)); });
   const percent = job ? Math.min(100, Math.max(0, job.totalBytes ? job.copiedBytes / job.totalBytes * 100 : 0)) : 0;
   return <section className="panel working-copy-section" aria-labelledby="working-copy-heading">
-    <p className="eyebrow">IMAGE FILE TOOLS</p><h2 id="working-copy-heading">Create a working copy</h2>
+    <p className="eyebrow">IMAGE FILE TOOLS</p><h2 id="working-copy-heading" tabIndex={-1}>Create a working copy</h2>
     <p className="report-description">Copy an existing regular image file to a new file, then independently read and compare SHA-256 hashes. This does not acquire physical drives or recover deleted files.</p>
     <div className="report-actions"><button className="outline-button" disabled={busy || active(job)} onClick={() => void choose()}>Choose source and destination</button></div>
     {plan && <div className="working-copy-plan"><h3>Review working copy</h3>
@@ -66,7 +66,8 @@ export function WorkingCopyPanel() {
       <div className="report-actions"><button className="outline-button" disabled={busy || !plan.canStart} onClick={() => void start()}>Start working copy</button><button className="outline-button" disabled={busy} onClick={() => { setPlan(null); setMessage("Working-copy plan dismissed."); }}>Dismiss plan</button></div>
     </div>}
     {job && <div className="working-copy-job">
-      <p className="copy-state">Status: <b>{job.state.replaceAll("-", " ")}</b></p>
+      <p className="copy-state">File working-copy job status: <b>{job.state.replaceAll("-", " ")}</b></p>
+      <p className="panel-note">Job {job.jobId} · Started {job.startedAtUtc}{job.endedAtUtc ? ` · Ended ${job.endedAtUtc}` : ""}. This is an existing-file job, not physical-disk acquisition.</p>
       <dl className="working-copy-details"><dt>Source file</dt><dd>{job.sourcePath}</dd><dt>Output file</dt><dd>{job.outputPath}</dd></dl>
       <label className="copy-progress-label" htmlFor="copy-progress">{bytes(job.copiedBytes)} of {bytes(job.totalBytes)} copied ({percent.toFixed(1)}%)</label><progress id="copy-progress" max={100} value={percent} />
       {job.state === "verifying" && <p className="panel-note">Independently rereading the output and comparing its SHA-256 hash with the source read stream.</p>}

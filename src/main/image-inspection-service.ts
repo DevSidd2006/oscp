@@ -5,8 +5,11 @@ import type { BigIntStats } from "node:fs";
 import path from "node:path";
 import type { ImageInspection, SectorView } from "../shared/image-inspection";
 import { inspectImageLayout } from "./image-layout";
+import type { SelectedRecoveryImage } from "../shared/recovery-case";
+import { inventoryFat32Root } from "./fat32-inventory";
+import { validateFileRecordsSelection, validateImageFileRecords, type ImageFileRecords } from "../shared/file-records";
 
-interface SelectedImage { imageId: string; filePath: string; handle: FileHandle; identity: BigIntStats; sizeBytes: number }
+interface SelectedImage { imageId: string; filePath: string; handle: FileHandle; identity: BigIntStats; sizeBytes: number; inspection?: ImageInspection }
 
 /** Reads selected stored-image bytes only. No live device paths are accepted. */
 export function createImageInspectionService(options: { chooseImage: () => Promise<string | null> }) {
@@ -76,10 +79,49 @@ export function createImageInspectionService(options: { chooseImage: () => Promi
           }, image.sizeBytes);
           await verify(image);
           assertOpen();
-          const inspection: ImageInspection = { imageId: image.imageId, fileName: path.basename(chosen), sizeBytes: image.sizeBytes, capturedAtUtc: new Date().toISOString(), ...layout };
-          selected = image;
+          const inspection: ImageInspection = {
+            imageId: image.imageId, fileName: path.basename(chosen), sizeBytes: image.sizeBytes,
+            capturedAtUtc: new Date().toISOString(), ...layout,
+            warnings: [...layout.warnings,
+              "Recovery preparation: preserve the original image and use a verified working copy; save any future recovered files on a separate physical disk.",
+              "Filesystem metadata identifies stored structures only; it does not establish that deleted files can be recovered."],
+          };
+          selected = { ...image, inspection };
           return { status: "inspected", inspection };
         } catch (error) { await handle.close(); throw error; }
+      });
+    },
+    /** Trusted main-process case planning only; never expose sourcePath as an IPC argument. */
+    getSelectedImageForCase(): Promise<SelectedRecoveryImage> {
+      return serialize(async () => {
+        assertOpen();
+        if (!selected?.inspection) throw new Error("Inspect an image before planning a recovery case.");
+        try {
+          await verify(selected);
+          const info = selected.identity;
+          return { inspection: structuredClone(selected.inspection), sourcePath: selected.filePath,
+            identity: { dev: String(info.dev), ino: String(info.ino), sizeBytes: selected.sizeBytes, mtimeNs: String(info.mtimeNs), ctimeNs: String(info.ctimeNs) } };
+        } catch (error) { await clear(); throw error; }
+      });
+    },
+    listImageFileRecords(imageId: unknown, partitionIndex: unknown): Promise<ImageFileRecords> {
+      return serialize(async () => {
+        assertOpen();
+        const input = validateFileRecordsSelection(imageId, partitionIndex);
+        if (!selected?.inspection || selected.imageId !== input.imageId) throw new Error("Select the image again; image identifier is stale or invalid.");
+        const image = selected;
+        const partition = image.inspection!.partitions.find(value => value.index === input.partitionIndex);
+        if (!partition) throw new Error("Selected image partition was not found.");
+        try {
+          await verify(image); let totalRead = 0;
+          const inventory = await inventoryFat32Root(async (offset, length) => {
+            totalRead += length;
+            if (!Number.isSafeInteger(totalRead) || totalRead > 8 * 1024 * 1024) throw new Error("File-record inventory read budget exceeded.");
+            return read(image, offset, length, 1024 * 1024);
+          }, image.sizeBytes, partition);
+          await verify(image); assertOpen();
+          return validateImageFileRecords({ imageId: image.imageId, ...inventory });
+        } catch (error) { await clear(); throw error; }
       });
     },
     readImageSector(imageId: unknown, offsetBytes: unknown, sectorSize: unknown): Promise<SectorView> {

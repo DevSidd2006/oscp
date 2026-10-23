@@ -22,7 +22,7 @@ The current build is a read-only Electron foundation. It displays real Windows d
 
 This safety boundary is intentional while the Windows helper layer is being developed.
 
-The working-copy panel can copy an existing image file to a new file on a separate physical disk, with SHA-256 verification, progress, cancellation, and companion metadata. It does not acquire a physical disk or recover deleted files. See [development instructions](docs/development.md) for supported paths and verification limits.
+The working-copy panel can copy an existing image file to a new file on a separate physical disk, with SHA-256 verification, progress, cancellation, and companion metadata. The image inspector reads stored image bytes through the privileged main process and reports MBR/GPT geometry plus NTFS, FAT32, and exFAT boot metadata. It supports bounded sector previews and never mounts, writes, or traverses an image. It does not acquire a physical disk or recover deleted files. See [development instructions](docs/development.md) for supported paths and verification limits.
 
 ## Architecture
 
